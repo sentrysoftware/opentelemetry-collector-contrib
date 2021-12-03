@@ -10,12 +10,14 @@ You can also specify the working directory of the command.
 
 The executable path is required:
 
-- `executable_path`: The path of the command to run. If `executable_path` is relative, then it is evaluated relative to the working directory.
+- `executable_path`: The path of the command to run. If `executable_path` is relative then it is evaluated relative to the working directory.
 
 The following settings can be optionally configured:
 
 - `args`: The command line arguments to use.
 - `working_directory`: Defines the working directory of the command. If it is not configured, the `subprocess` extension runs the command in the calling process's current directory.
+- `restart_delay`: Time to wait before restarting the sub process after a failure. Default: 10s
+- `retries`: Number of restarts due to failures. Default: -1 (Always retry restarts)
 
 ## Example Config
 
