@@ -1,0 +1,22 @@
+bmchelix/helix1:
+  endpoint: https://helix1:8080
+  api:
+    access_key: access_key
+    access_secret_key: access_secret_key
+    tenant_id: tenant_id
+bmchelix/helix2:
+  endpoint: https://helix2:8080
+  api:
+    access_key: access_key
+    access_secret_key: access_secret_key
+    tenant_id: tenant_id
+  timeout: 20s
+  retry_on_failure:
+    enabled: true
+    initial_interval: 5s
+    randomization_factor: 0.5
+    multiplier: 8.0
+    max_interval: 1m
+    max_elapsed_time: 8m
+  resource_to_telemetry_conversion:
+    enabled: true
