@@ -59,7 +59,9 @@ bmchelix:
   }
 ]
 ```
-## Payload Example 
+
+## Payload Example
+
 ```json
 [
   {
@@ -93,4 +95,4 @@ bmchelix:
 ```
 
 ## Customize entity mapping
-    
+
