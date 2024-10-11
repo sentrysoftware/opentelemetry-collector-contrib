@@ -7,7 +7,6 @@ import (
 	"go.opentelemetry.io/collector/exporter/exportertest"
 )
 
-
 func TestNewBmcHelixExporterWithNilConfig(t *testing.T) {
 	t.Parallel()
 
@@ -24,4 +23,3 @@ func TestNewBmcHelixExporterWithDefaultConfig(t *testing.T) {
 	assert.NotNil(t, exp)
 	assert.NoError(t, err)
 }
-

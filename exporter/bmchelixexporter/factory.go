@@ -20,6 +20,7 @@ func NewFactory() exporter.Factory {
 	)
 }
 
+// CreateDefaultConfig creates the default configuration for BMC Helix exporter.
 func createDefaultConfig() component.Config {
 	return &Config{
 		Timeout:                   10 * time.Second,
@@ -27,6 +28,7 @@ func createDefaultConfig() component.Config {
 	}
 }
 
+// CreateMetricsExporter creates a BMC Helix exporter.
 func createMetricsExporter(
 	ctx context.Context,
 	set exporter.Settings,

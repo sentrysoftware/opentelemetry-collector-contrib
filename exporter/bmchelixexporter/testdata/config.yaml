@@ -1,15 +1,9 @@
 bmchelix/helix1:
   endpoint: https://helix1:8080
-  api:
-    access_key: access_key
-    access_secret_key: access_secret_key
-    tenant_id: tenant_id
+  api_key: api_key
 bmchelix/helix2:
   endpoint: https://helix2:8080
-  api:
-    access_key: access_key
-    access_secret_key: access_secret_key
-    tenant_id: tenant_id
+  api_key: api_key
   timeout: 20s
   retry_on_failure:
     enabled: true
