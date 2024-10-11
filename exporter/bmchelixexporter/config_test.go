@@ -30,12 +30,8 @@ func TestLoadConfig(t *testing.T) {
 		{
 			id: component.NewIDWithName(metadata.Type, "helix1"),
 			expected: &Config{
-				Endpoint: "https://helix1:8080",
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
-				},
+				Endpoint:    "https://helix1:8080",
+				ApiKey:      "api_key",
 				Timeout:     10 * time.Second,
 				RetryConfig: configretry.BackOffConfig{},
 				ResourceToTelemetryConfig: resourcetotelemetry.Settings{
@@ -47,12 +43,8 @@ func TestLoadConfig(t *testing.T) {
 			id: component.NewIDWithName(metadata.Type, "helix2"),
 			expected: &Config{
 				Endpoint: "https://helix2:8080",
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
-				},
-				Timeout: 20 * time.Second,
+				ApiKey:   "api_key",
+				Timeout:  20 * time.Second,
 				RetryConfig: configretry.BackOffConfig{
 					Enabled:             true,
 					InitialInterval:     5 * time.Second,
@@ -93,22 +85,14 @@ func TestValidateConfig(t *testing.T) {
 			name: "valid_config",
 			config: &Config{
 				Endpoint: "https://helix:8080",
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
-				},
-				Timeout: 10 * time.Second,
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
 			},
 		},
 		{
 			name: "invalid_config1",
 			config: &Config{
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
-				},
+				ApiKey: "api_key",
 			},
 			err: "endpoint is required",
 		},
@@ -116,47 +100,164 @@ func TestValidateConfig(t *testing.T) {
 			name: "invalid_config2",
 			config: &Config{
 				Endpoint: "https://helix:8080",
-				Api: ApiConfig{
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
-				},
 			},
-			err: "api access key is required",
+			err: "api key is required",
 		},
 		{
 			name: "invalid_config3",
 			config: &Config{
 				Endpoint: "https://helix:8080",
-				Api: ApiConfig{
-					AccessKey: "access_key",
-					TenantId:  "tenant_id",
+				ApiKey:   "api_key",
+				Timeout:  -1,
+			},
+			err: "timeout must be a positive integer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.err != "" {
+				err := tt.config.Validate()
+				assert.Error(t, err)
+				assert.Equal(t, tt.err, err.Error())
+			} else {
+				assert.NoError(t, tt.config.Validate())
+			}
+		})
+	}
+}
+
+func TestValidateMappingModelConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		err    string
+	}{
+		{
+			name: "valid_config",
+			config: &Config{
+				Endpoint: "https://helix:8080",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							EntityTypeId:         "system_memory",
+							MetricPatterns:       []string{`system\.memory\.`},
+							RequiredAttrsForId:   []string{"id"},
+							RequiredAttrsForName: []string{"id"},
+							MetricAttributes:     map[string]string{},
+						},
+					},
+					StateAttributes: []string{"state"},
 				},
 			},
-			err: "api access secret key is required",
+		},
+		{
+			name: "invalid_config1",
+			config: &Config{
+				Endpoint: "https://helix:8080",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							MetricPatterns:       []string{`system\.memory\.`},
+							RequiredAttrsForId:   []string{"id"},
+							RequiredAttrsForName: []string{"id"},
+							MetricAttributes:     map[string]string{},
+						},
+					},
+					StateAttributes: []string{"state"},
+				},
+			},
+			err: "entity_type_id is required",
+		},
+		{
+			name: "invalid_config2",
+			config: &Config{
+				Endpoint: "https://helix:8080",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							EntityTypeId:         "system_memory",
+							MetricPatterns:       []string{`system\.memory\.`},
+							RequiredAttrsForName: []string{"id"},
+							MetricAttributes:     map[string]string{},
+						},
+					},
+					StateAttributes: []string{"state"},
+				},
+			},
+			err: "required_attributes_for_id is required",
+		},
+		{
+			name: "invalid_config3",
+			config: &Config{
+				Endpoint: "https://helix:8080",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							EntityTypeId:         "system_memory",
+							MetricPatterns:       []string{`system\.memory\.`},
+							RequiredAttrsForId:   []string{"id"},
+							MetricAttributes:     map[string]string{},
+						},
+					},
+					StateAttributes: []string{"state"},
+				},
+			},
+			err: "required_attributes_for_name is required",
 		},
 		{
 			name: "invalid_config4",
 			config: &Config{
 				Endpoint: "https://helix:8080",
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							EntityTypeId:         "system_memory",
+							RequiredAttrsForId:   []string{"id"},
+							RequiredAttrsForName:   []string{"id"},
+						},
+					},
+					StateAttributes: []string{"state"},
 				},
 			},
-			err: "api tenant id is required",
+			err: "metric_patterns or metric_attributes is required",
 		},
 		{
 			name: "invalid_config5",
 			config: &Config{
 				Endpoint: "https://helix:8080",
-				Api: ApiConfig{
-					AccessKey:       "access_key",
-					AccessSecretKey: "access_secret_key",
-					TenantId:        "tenant_id",
+				ApiKey:   "api_key",
+				Timeout:  10 * time.Second,
+				MappingModel: &MappingModelConfig{
+					Force: false,
+					EntityMappings: []EntityMappingConfig{
+						{
+							EntityTypeId:         "system_memory",
+							MetricPatterns:       []string{`(`}, // Incorrect pattern: unbalanced parentheses
+							RequiredAttrsForId:   []string{"id"},
+							RequiredAttrsForName: []string{"id"},
+							MetricAttributes:     map[string]string{},
+						},
+					},
+					StateAttributes: []string{"state"},
 				},
-				Timeout: -1000000000000,
 			},
-			err: "timeout must be a positive integer",
+			err: "\"(\", error parsing regexp: missing closing ): `(`",
 		},
 	}
 
