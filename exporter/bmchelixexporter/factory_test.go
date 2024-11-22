@@ -25,7 +25,7 @@ func TestCreateInstanceViaFactory(t *testing.T) {
 	factory := NewFactory()
 
 	cfg := factory.CreateDefaultConfig()
-	exp, err := factory.CreateMetricsExporter(
+	exp, err := factory.CreateMetrics(
 		context.Background(),
 		exportertest.NewNopSettings(),
 		cfg)

@@ -3,7 +3,6 @@ package bmchelixexporter
 import (
 	"fmt"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/bmchelixexporter/internal/mapping"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.27.0"
@@ -23,14 +22,13 @@ type BmcHelixSample struct {
 }
 
 type BmcHelixMetricsProducer struct {
-	osHostname      string
-	logger          *zap.Logger
-	mappingResolver *mapping.MappingResolver
+	osHostname string
+	logger     *zap.Logger
 }
 
 // ProduceHelixPayload takes the OpenTelemetry metrics and converts them into the BMC Helix metric format
 func (mp *BmcHelixMetricsProducer) ProduceHelixPayload(metrics pmetric.Metrics) ([]BmcHelixMetric, error) {
-	var helixMetrics []BmcHelixMetric
+	var helixMetrics = []BmcHelixMetric{}
 
 	// Iterate through each resource metrics
 	rmetrics := metrics.ResourceMetrics()
@@ -85,6 +83,9 @@ func (mp *BmcHelixMetricsProducer) createHelixMetric(metric pmetric.Metric, reso
 	// Indicates the monitor in the hierarchy that is mapped to the device
 	labels["isDeviceMappingEnabled"] = "true"
 
+	// Update the metric name for the BMC Helix payload
+	labels["metricName"] = metric.Name()
+
 	// Samples to hold the metric values
 	var samples []BmcHelixSample
 
@@ -94,14 +95,21 @@ func (mp *BmcHelixMetricsProducer) createHelixMetric(metric pmetric.Metric, reso
 		dataPoints := metric.Sum().DataPoints()
 		for i := 0; i < dataPoints.Len(); i++ {
 			dp := dataPoints.At(i)
-			samples = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
-
+			var err error
+			samples, err = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
+			if err != nil {
+				return BmcHelixMetric{}, err
+			}
 		}
 	case pmetric.MetricTypeGauge:
 		dataPoints := metric.Gauge().DataPoints()
 		for i := 0; i < dataPoints.Len(); i++ {
 			dp := dataPoints.At(i)
-			samples = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
+			var err error
+			samples, err = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
+			if err != nil {
+				return BmcHelixMetric{}, err
+			}
 		}
 	}
 
@@ -116,24 +124,21 @@ func (mp *BmcHelixMetricsProducer) createHelixMetric(metric pmetric.Metric, reso
 }
 
 // Updates the metric information for the BMC Helix payload
-func (mp *BmcHelixMetricsProducer) updateMetricInformation(samples []BmcHelixSample, dp pmetric.NumberDataPoint, labels map[string]string, metric pmetric.Metric, resourceAttrs map[string]string) []BmcHelixSample {
+func (mp *BmcHelixMetricsProducer) updateMetricInformation(samples []BmcHelixSample, dp pmetric.NumberDataPoint, labels map[string]string, metric pmetric.Metric, resourceAttrs map[string]string) ([]BmcHelixSample, error) {
 
 	// Update the entity information for the BMC Helix payload
 	err := mp.updateEntityInformation(labels, metric.Name(), resourceAttrs, dp.Attributes().AsRaw())
 	if err != nil {
-		return samples
+		return nil, err
 	}
 
-	// Update the metric name for the BMC Helix payload
-	mp.mappingResolver.ResolveMetricName(labels, metric, dp)
-
-	return append(samples, newSample(dp))
+	return append(samples, newSample(dp)), nil
 }
 
 // Update the entity information for the BMC Helix payload
 func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]string, metricName string, resourceAttrs map[string]string, metricAttrs map[string]any) error {
-	// If the entityTypeId and entityName are already set, return early
-	if labels["entityTypeId"] != "" {
+	// If the entityName exists, return early
+	if labels["entityName"] != "" {
 		return nil
 	}
 
@@ -165,10 +170,19 @@ func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]str
 	}
 
 	// Use the mapping resolver to determine entityTypeId, entityId, and entityName
-	entityTypeId, entityId, entityName, err := mp.mappingResolver.ResolveMetricEntity(metricName, stringMetricAttrs)
-	if err != nil {
-		mp.logger.Warn("Failed to map entity type and attributes", zap.String("metricName", metricName), zap.Error(err))
-		return err
+	entityTypeId := stringMetricAttrs["entityTypeId"]
+	if entityTypeId == "" {
+		return fmt.Errorf("entityTypeId is not set for metric %s", metricName)
+	}
+
+	entityId := stringMetricAttrs["entityId"]
+	if entityId == "" {
+		return fmt.Errorf("entityId is not set for metric %s", metricName)
+	}
+
+	entityName := stringMetricAttrs["entityName"]
+	if entityName == "" {
+		return fmt.Errorf("entityName is not set for metric %s", metricName)
 	}
 
 	// Set the entityTypeId, entityId, and entityName in labels

@@ -5,9 +5,6 @@ import (
 	"errors"
 	"os"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/bmchelixexporter/internal/mapping"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/bmchelixexporter/internal/mapping/hardware"
-	"github.com/open-telemetry/opentelemetry-collector-contrib/exporter/bmchelixexporter/internal/mapping/system"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -69,21 +66,10 @@ func (be *BmcHelixExporter) start(ctx context.Context, host component.Host) erro
 		return err
 	}
 
-	var mappingModels map[string]mapping.MappingModel
-	if be.config.MappingModel != nil {
-		mappingModels = buildMappingModelsUsingConfig(be.config.MappingModel)
-	} else {
-		mappingModels = newDefaultMappingModelRegistry().GetMappingModels()
-	}
-
 	// Initialize and store the BmcHelixMetricsProducer
 	be.metricsProducer = &BmcHelixMetricsProducer{
 		osHostname: osHostname,
 		logger:     be.logger,
-		mappingResolver: &mapping.MappingResolver{
-			Logger:        be.logger,
-			MappingModels: mappingModels,
-		},
 	}
 
 	// Initialize and store the BmcHelixMetricsConsumer
@@ -97,60 +83,4 @@ func (be *BmcHelixExporter) start(ctx context.Context, host component.Host) erro
 	be.logger.Info("Initialized BMC Helix Exporter")
 	return nil
 
-}
-
-// buildMappingModelsUsingConfig builds the mapping models using the provided configuration
-func buildMappingModelsUsingConfig(mappingModelConfig *MappingModelConfig) (map[string]mapping.MappingModel) {
-	mappingModels := map[string]mapping.MappingModel{
-		"fromConfig": {
-			EntityMappings: buildEntityMappingsFromConfig(mappingModelConfig.EntityMappings),
-			StateAttributes: mappingModelConfig.StateAttributes,
-		},
-	}
-
-	// Early return if ReplaceDefault is true
-	if mappingModelConfig.Force {
-		return mappingModels
-	}
-
-	// Add the default mapping models
-	for k, v := range newDefaultMappingModelRegistry().GetMappingModels() {
-		mappingModels[k] = v
-	}
-	return mappingModels
-}
-
-// Helper to build entity mappings from the configuration
-func buildEntityMappingsFromConfig(entityMappingsConfig []EntityMappingConfig) []mapping.EntityMapping {
-	entityMappings := make([]mapping.EntityMapping, 0, len(entityMappingsConfig))
-	for _, config := range entityMappingsConfig {
-		entityMappings = append(entityMappings, mapping.EntityMapping{
-			EntityTypeId:         config.EntityTypeId,
-			MetricPatterns:       mapping.CompilePatterns(config.MetricPatterns),
-			RequiredAttrsForId:   config.RequiredAttrsForId,
-			RequiredAttrsForName: config.RequiredAttrsForName,
-			MetricAttributes:     config.MetricAttributes,
-		})
-	}
-	return entityMappings
-}
-
-// newDefaultMappingModelRegistry creates a new mapping model registry with the default mapping models
-func newDefaultMappingModelRegistry() *mapping.MappingModelRegistry {
-	// Create the mapping model registry
-	mappingModelRegistry := mapping.NewMappingModelRegistry()
-
-	// Get the hardware mapping model
-	hardwareMappingModel := hardware.NewHardwareMappingModelProvider().GetMappingModel()
-
-	// Get the system mapping model
-	systemMappingModel := system.NewSystemMappingModelProvider().GetMappingModel()
-
-	// Register the hardware mapping model
-	mappingModelRegistry.RegisterMappingModel("hardware", hardwareMappingModel)
-
-	// Register the system mapping model
-	mappingModelRegistry.RegisterMappingModel("system", systemMappingModel)
-
-	return mappingModelRegistry
 }

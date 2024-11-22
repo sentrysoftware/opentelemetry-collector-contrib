@@ -41,7 +41,7 @@ func createMetricsExporter(
 		return nil, err
 	}
 
-	me, err := exporterhelper.NewMetricsExporter(
+	me, err := exporterhelper.NewMetrics(
 		ctx,
 		set,
 		cfg,
