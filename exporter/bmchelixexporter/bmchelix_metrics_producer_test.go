@@ -18,9 +18,9 @@ func generateMockMetrics(dpCreator func(metric pmetric.Metric) pmetric.NumberDat
 	metric.SetDescription("This is a test metric")
 	metric.SetUnit("ms")
 	dp := dpCreator(metric)
-	dp.Attributes().PutStr("entityId", "test-entity")
+	dp.Attributes().PutStr("entityName", "test-entity")
 	dp.Attributes().PutStr("entityTypeId", "test-entity-type-id")
-	dp.Attributes().PutStr("entityName", "test-entity-Name")
+	dp.Attributes().PutStr("instanceName", "test-entity-Name")
 	dp.SetTimestamp(1634236000000000) // Example timestamp
 	dp.SetDoubleValue(42.0)
 	return metrics
@@ -39,18 +39,35 @@ func TestProduceHelixPayload(t *testing.T) {
 		Labels: map[string]string{
 			"isDeviceMappingEnabled": "true",
 			"entityTypeId":           "test-entity-type-id",
-			"entityName":             "test-entity-Name",
+			"entityName":             "test-entity",
 			"source":                 "OTEL",
 			"unit":                   "ms",
 			"hostType":               "server",
 			"metricName":             "test_metric",
 			"hostname":               "test-hostname",
-			"entityId":               "OTEL:test-hostname:test-entity:test-entity-Name",
+			"instanceName":           "test-entity-Name",
+			"entityId":               "OTEL:test-hostname:test-entity-type-id:test-entity",
+			"parentEntityName":       "test-entity-type-id_container",
+			"parentEntityTypeId":     "test-entity-type-id_container",
 		},
 		Samples: []BmcHelixSample{sample},
 	}
 
-	expectedPayload := []BmcHelixMetric{metric}
+	parent := BmcHelixMetric{
+		Labels: map[string]string{
+			"entityTypeId":           "test-entity-type-id_container",
+			"entityName":             "test-entity-type-id_container",
+			"isDeviceMappingEnabled": "true",
+			"source":                 "OTEL",
+			"hostType":               "server",
+			"hostname":               "test-hostname",
+			"entityId":               "OTEL:test-hostname:test-entity-type-id_container:test-entity-type-id_container",
+			"metricName":             "identity",
+		},
+		Samples: []BmcHelixSample{},
+	}
+
+	expectedPayload := []BmcHelixMetric{parent, metric}
 
 	producer := &BmcHelixMetricsProducer{
 		osHostname: "test-hostname",

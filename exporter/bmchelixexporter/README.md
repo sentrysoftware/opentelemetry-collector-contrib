@@ -29,7 +29,7 @@ Example:
 exporters:
   bmchelix/helix1:
     endpoint: https://company.onbmc.com
-    api_key: tenant_id::access_key::access_secret_key
+    api_key: <api-key>
 ```
 
 ### Optional Settings
@@ -53,7 +53,7 @@ Example:
 exporters:
   bmchelix/helix2:
     endpoint: https://company.onbmc.com
-    api_key: tenant_id::access_key::access_secret_key
+    api_key: <api-key>
     timeout: 20s
     retry_on_failure:
       enabled: true
@@ -76,11 +76,11 @@ To ensure resource attributes (e.g., `hostname`) are available for all metrics, 
 
 To ensure metrics are correctly populated in BMC Helix, the following attributes must be set:  
 
-- `entityId`: Unique identifier for the entity.
+- `entityName`: Unique identifier for the entity. Used as display name if `instanceName` is missing.
 - `entityTypeId`: Type identifier for the entity.
-- `entityName`: Display name of the entity.
+- `instanceName`: Display name of the entity.
 
-> **Note:** If any of these three attributes (`entityId`, `entityTypeId`, or `entityName`) is missing, the metric will not be populated.
+> **Note:** If `entityName` or `entityTypeId` is missing, the metric will not be populated.
 
 ### Transformer Example for Hardware Metrics
 
@@ -93,17 +93,17 @@ You can use the following OpenTelemetry Transformation Language (OTTL) configura
 
       - context: datapoint
         statements:
-          # Create a new attribute 'entityId' with the value of 'id'
-          - set(attributes["entityId"], attributes["id"]) where attributes["id"] != nil
+          # Create a new attribute 'entityName' with the value of 'id'
+          - set(attributes["entityName"], attributes["id"]) where attributes["id"] != nil
           # Create a new attribute 'entityName' with the value of 'name'
-          - set(attributes["entityName"], attributes["name"]) where attributes["name"] != nil
+          - set(attributes["instanceName"], attributes["name"]) where attributes["name"] != nil
 
       - context: datapoint
         conditions:
           - IsMatch(metric.name, ".*\\.agent\\..*")
         statements:
-          - set(attributes["entityId"], attributes["host.id"]) where attributes["host.id"] != nil
-          - set(attributes["entityName"], attributes["service.name"]) where attributes["service.name"] != nil
+          - set(attributes["entityName"], attributes["host.id"]) where attributes["host.id"] != nil
+          - set(attributes["instanceName"], attributes["service.name"]) where attributes["service.name"] != nil
           - set(attributes["entityTypeId"], "agent")
 
       - context: datapoint

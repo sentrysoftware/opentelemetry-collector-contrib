@@ -29,6 +29,7 @@ type BmcHelixMetricsProducer struct {
 // ProduceHelixPayload takes the OpenTelemetry metrics and converts them into the BMC Helix metric format
 func (mp *BmcHelixMetricsProducer) ProduceHelixPayload(metrics pmetric.Metrics) ([]BmcHelixMetric, error) {
 	var helixMetrics = []BmcHelixMetric{}
+	containerParentEntities := map[string]BmcHelixMetric{}
 
 	// Iterate through each resource metrics
 	rmetrics := metrics.ResourceMetrics()
@@ -52,16 +53,49 @@ func (mp *BmcHelixMetricsProducer) ProduceHelixPayload(metrics pmetric.Metrics) 
 				metric := metrics.At(k)
 
 				// Create the payload for each metric
-				helixMetric, err := mp.createHelixMetric(metric, resourceAttrs)
+				newHelixMetric, err := mp.createHelixMetric(metric, resourceAttrs)
 				if err != nil {
 					mp.logger.Warn("Failed to create Helix metric", zap.Error(err))
 					continue
 				}
-				helixMetrics = append(helixMetrics, helixMetric)
+
+				helixMetrics = appendMetricWithParentEntity(helixMetrics, newHelixMetric, containerParentEntities)
 			}
 		}
 	}
 	return helixMetrics, nil
+}
+
+// appends the metric to the helixMetrics slice and creates a parent entity if it doesn't exist
+func appendMetricWithParentEntity(helixMetrics []BmcHelixMetric, helixMetric BmcHelixMetric, containerParentEntities map[string]BmcHelixMetric) []BmcHelixMetric {
+	// Extract parent entity information
+	parentEntityTypeId := fmt.Sprintf("%s_container", helixMetric.Labels["entityTypeId"])
+	parentEntityId := fmt.Sprintf("%s:%s:%s:%s", helixMetric.Labels["source"], helixMetric.Labels["hostname"], parentEntityTypeId, parentEntityTypeId)
+
+	// Create a parent entity if not already created
+	if _, exists := containerParentEntities[parentEntityId]; !exists {
+		parentMetric := BmcHelixMetric{
+			Labels: map[string]string{
+				"entityId":               parentEntityId,
+				"entityName":             parentEntityTypeId,
+				"entityTypeId":           parentEntityTypeId,
+				"hostname":               helixMetric.Labels["hostname"],
+				"source":                 helixMetric.Labels["source"],
+				"isDeviceMappingEnabled": helixMetric.Labels["isDeviceMappingEnabled"],
+				"hostType":               helixMetric.Labels["hostType"],
+				"metricName":             "identity", // Represents the parent entity itself
+			},
+			Samples: []BmcHelixSample{}, // Parent entities don't have samples
+		}
+		containerParentEntities[parentEntityId] = parentMetric
+		helixMetrics = append(helixMetrics, parentMetric)
+	}
+
+	// Add parent reference to the child metric
+	helixMetric.Labels["parentEntityName"] = parentEntityTypeId
+	helixMetric.Labels["parentEntityTypeId"] = parentEntityTypeId
+
+	return append(helixMetrics, helixMetric)
 }
 
 // createHelixMetric converts a single OpenTelemetry metric into a BmcHelixMetric payload
@@ -175,20 +209,21 @@ func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]str
 		return fmt.Errorf("entityTypeId is not set for metric %s", metricName)
 	}
 
-	entityId := stringMetricAttrs["entityId"]
-	if entityId == "" {
-		return fmt.Errorf("entityId is not set for metric %s", metricName)
-	}
-
 	entityName := stringMetricAttrs["entityName"]
 	if entityName == "" {
 		return fmt.Errorf("entityName is not set for metric %s", metricName)
 	}
 
-	// Set the entityTypeId, entityId, and entityName in labels
+	instanceName := stringMetricAttrs["instanceName"]
+	if instanceName == "" {
+		instanceName = entityName
+	}
+
+	// Set the entityTypeId, entityId, instanceName and entityName in labels
 	labels["entityTypeId"] = entityTypeId
-	labels["entityId"] = fmt.Sprintf("%s:%s:%s:%s", labels["source"], labels["hostname"], entityId, entityName)
 	labels["entityName"] = entityName
+	labels["instanceName"] = instanceName
+	labels["entityId"] = fmt.Sprintf("%s:%s:%s:%s", labels["source"], labels["hostname"], entityTypeId, entityName)
 	return nil
 }
 
