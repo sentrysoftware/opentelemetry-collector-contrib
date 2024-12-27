@@ -21,6 +21,7 @@ type BmcHelixSample struct {
 	Timestamp int64   `json:"timestamp"`
 }
 
+// BmcHelixMetricsProducer is responsible for converting OpenTelemetry metrics into BMC Helix metrics
 type BmcHelixMetricsProducer struct {
 	osHostname string
 	logger     *zap.Logger
@@ -42,6 +43,7 @@ func (mp *BmcHelixMetricsProducer) ProduceHelixPayload(metrics pmetric.Metrics) 
 		resourceAttrs := extractResourceAttributes(resource)
 
 		mp.logger.Debug("Resource attributes", zap.Any("attributes", resourceAttrs))
+
 		// Iterate through each scope metric within the resource
 		scopeMetrics := resourceMetric.ScopeMetrics()
 		for j := 0; j < scopeMetrics.Len(); j++ {
@@ -121,34 +123,31 @@ func (mp *BmcHelixMetricsProducer) createHelixMetric(metric pmetric.Metric, reso
 	labels["metricName"] = metric.Name()
 
 	// Samples to hold the metric values
-	var samples []BmcHelixSample
+	samples := []BmcHelixSample{}
 
-	// Handle different types of metrics (sum, gauge, histogram, etc.)
+	// Handle different types of metrics (sum and gauge)
+	// BMC Helix only supports simple metrics (sum, gauge, etc.) and not histograms or summaries
 	switch metric.Type() {
 	case pmetric.MetricTypeSum:
 		dataPoints := metric.Sum().DataPoints()
 		for i := 0; i < dataPoints.Len(); i++ {
-			dp := dataPoints.At(i)
-			var err error
-			samples, err = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
-			if err != nil {
-				return BmcHelixMetric{}, err
-			}
+			samples = mp.processDatapoint(samples, dataPoints.At(i), labels, metric, resourceAttrs)
 		}
 	case pmetric.MetricTypeGauge:
 		dataPoints := metric.Gauge().DataPoints()
 		for i := 0; i < dataPoints.Len(); i++ {
-			dp := dataPoints.At(i)
-			var err error
-			samples, err = mp.updateMetricInformation(samples, dp, labels, metric, resourceAttrs)
-			if err != nil {
-				return BmcHelixMetric{}, err
-			}
+			samples = mp.processDatapoint(samples, dataPoints.At(i), labels, metric, resourceAttrs)
 		}
 	}
 
-	if len(samples) == 0 {
-		return BmcHelixMetric{}, fmt.Errorf("no samples found for metric %s", metric.Name())
+	// Check if the entityTypeId is set
+	if labels["entityTypeId"] == "" {
+		return BmcHelixMetric{}, fmt.Errorf("entityTypeId is required for the BMC Helix payload but not set for metric %s", metric.Name())
+	}
+
+	// Check if the entityName is set
+	if labels["entityName"] == "" {
+		return BmcHelixMetric{}, fmt.Errorf("entityName is required for the BMC Helix payload but not set for metric %s", metric.Name())
 	}
 
 	return BmcHelixMetric{
@@ -157,30 +156,26 @@ func (mp *BmcHelixMetricsProducer) createHelixMetric(metric pmetric.Metric, reso
 	}, nil
 }
 
-// Updates the metric information for the BMC Helix payload
-func (mp *BmcHelixMetricsProducer) updateMetricInformation(samples []BmcHelixSample, dp pmetric.NumberDataPoint, labels map[string]string, metric pmetric.Metric, resourceAttrs map[string]string) ([]BmcHelixSample, error) {
+// Updates the metric information for the BMC Helix payload and returns the updated samples
+func (mp *BmcHelixMetricsProducer) processDatapoint(samples []BmcHelixSample, dp pmetric.NumberDataPoint, labels map[string]string, metric pmetric.Metric, resourceAttrs map[string]string) ([]BmcHelixSample) {
 
 	// Update the entity information for the BMC Helix payload
 	err := mp.updateEntityInformation(labels, metric.Name(), resourceAttrs, dp.Attributes().AsRaw())
 	if err != nil {
-		return nil, err
+		mp.logger.Warn("Failed to update entity information", zap.Error(err))
 	}
 
-	return append(samples, newSample(dp)), nil
+	return append(samples, newSample(dp))
 }
 
 // Update the entity information for the BMC Helix payload
-func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]string, metricName string, resourceAttrs map[string]string, metricAttrs map[string]any) error {
-	// If the entityName exists, return early
-	if labels["entityName"] != "" {
-		return nil
-	}
+func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]string, metricName string, resourceAttrs map[string]string, dpAttributes map[string]any) error {
 
 	// Try to get the hostname from resource attributes first
 	hostname, found := resourceAttrs[conventions.AttributeHostName]
 	if !found || hostname == "" {
 		// Fallback to metric attributes if not found or empty in resource attributes
-		if maybeHostname, ok := metricAttrs[conventions.AttributeHostName].(string); ok && maybeHostname != "" {
+		if maybeHostname, ok := dpAttributes[conventions.AttributeHostName].(string); ok && maybeHostname != "" {
 			hostname = maybeHostname
 		} else {
 			// Fallback to osHostname if hostname is not found in both places
@@ -193,7 +188,7 @@ func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]str
 
 	// Convert metricAttrs from map[string]any to map[string]string for compatibility with the resolver
 	stringMetricAttrs := make(map[string]string)
-	for k, v := range metricAttrs {
+	for k, v := range dpAttributes {
 		stringMetricAttrs[k] = fmt.Sprintf("%v", v)
 		labels[k] = fmt.Sprintf("%v", v)
 	}
@@ -206,12 +201,12 @@ func (mp *BmcHelixMetricsProducer) updateEntityInformation(labels map[string]str
 	// Use the mapping resolver to determine entityTypeId, entityId, and entityName
 	entityTypeId := stringMetricAttrs["entityTypeId"]
 	if entityTypeId == "" {
-		return fmt.Errorf("entityTypeId is not set for metric %s", metricName)
+		return fmt.Errorf("the entityTypeId is required for the BMC Helix payload but not set for metric %s. Metric datapoint will be skipped", metricName)
 	}
 
 	entityName := stringMetricAttrs["entityName"]
 	if entityName == "" {
-		return fmt.Errorf("entityName is not set for metric %s", metricName)
+		return fmt.Errorf("the entityName is required for the BMC Helix payload but not set for metric %s. Metric datapoint will be skipped", metricName)
 	}
 
 	instanceName := stringMetricAttrs["instanceName"]
